@@ -17,33 +17,43 @@ fn is_file_searchable(path: &Path, extensions: &Option<Vec<&str>>) -> bool {
     }
 }
 
-fn find_pattern_in_file(path: &Path, pattern: &str) {
-    let file = File::open(path).expect("Failed to open file");
+fn find_pattern_in_file(path: &Path, pattern: &str) -> Result<(), std::io::Error> {
+    let file = File::open(path)?;
     let reader = BufReader::new(file);
 
     for (index, line) in reader.lines().enumerate() {
-        let line = line.unwrap_or_else(|_err| String::new());
+        let line = line?;
 
         if line.contains(pattern) {
             println!("{}:{}: {}", path.to_string_lossy(), index + 1, line)
-        };
+        }
     }
+
+    Ok(())
 }
 
-fn recursive_dir_check(path: &Path, pattern: &str, extensions: &Option<Vec<&str>>) {
-    for entry in fs::read_dir(path).expect("failed to read dir") {
-        let entry = entry.expect("failed to read dir entry");
+fn recursive_dir_check(
+    path: &Path,
+    pattern: &str,
+    extensions: &Option<Vec<&str>>,
+) -> Result<(), std::io::Error> {
+    for entry in fs::read_dir(path)? {
+        let entry = entry?;
         let path = entry.path();
 
         if path.is_file() && is_file_searchable(&path, extensions) {
-            find_pattern_in_file(&path, pattern);
+            if let Err(error) = find_pattern_in_file(&path, pattern) {
+                eprintln!("rscan: {}: {}", path.display(), error);
+            }
         } else if path.is_dir() {
-            recursive_dir_check(&path, pattern, extensions);
+            recursive_dir_check(&path, pattern, extensions)?;
         }
     }
+
+    Ok(())
 }
 
-fn main() {
+fn main() -> Result<(), std::io::Error> {
     let mut args = env::args().skip(1);
 
     let pattern = args.next().expect("missing pattern");
@@ -64,13 +74,13 @@ fn main() {
         }
     }
 
-    let extensions: Option<Vec<&str>> = ext_raw.as_ref().map(|raw| {
-        raw.split(',').collect::<Vec<&str>>()
-    });
+    let extensions: Option<Vec<&str>> = ext_raw.as_ref().map(|raw| raw.split(',').collect());
 
     if path.is_file() {
-        find_pattern_in_file(&path, &pattern);
+        find_pattern_in_file(&path, &pattern)?;
     } else if path.is_dir() {
-        recursive_dir_check(&path, &pattern, &extensions);
+        recursive_dir_check(&path, &pattern, &extensions)?;
     }
+
+    Ok(())
 }
